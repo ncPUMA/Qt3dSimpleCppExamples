@@ -77,6 +77,7 @@ class CMovablePlanePrivate
         sideAMesh->setWidth(DEF_SIZE.width());
         sideAMesh->setHeight(DEF_SIZE.height());
         Qt3DExtras::QPhongAlphaMaterial * const sideAMaterial = new Qt3DExtras::QPhongAlphaMaterial(sideA);
+        sideAMaterial->setObjectName("sideAMaterial");
         sideAMaterial->setAmbient(DEF_A_CLR);
         sideAMaterial->setAlpha(DEF_ALPHA);
         sideA->addComponent(sideAMesh);
@@ -89,6 +90,7 @@ class CMovablePlanePrivate
         sideBMesh->setWidth(DEF_SIZE.width());
         sideBMesh->setHeight(DEF_SIZE.height());
         Qt3DExtras::QPhongAlphaMaterial * const sideBMaterial = new Qt3DExtras::QPhongAlphaMaterial(sideB);
+        sideAMaterial->setObjectName("sideBMaterial");
         sideBMaterial->setAmbient(DEF_B_CLR);
         sideBMaterial->setAlpha(DEF_ALPHA);
         sideB->addComponent(sideBTr);
@@ -108,6 +110,7 @@ class CMovablePlanePrivate
         mesh->setSlices(10);
         mesh->setRings(2);
         Qt3DExtras::QPhongAlphaMaterial * const material = new Qt3DExtras::QPhongAlphaMaterial(mesh);
+        material->setObjectName("borderMaterial");
         material->setShareable(true);
         material->setAmbient(DEF_BORDER_CLR);
         material->setAlpha(DEF_ALPHA);
@@ -140,6 +143,7 @@ class CMovablePlanePrivate
         mesh->setYExtent(DEF_BORDER_RADIUS * 4);
         mesh->setZExtent(DEF_BORDER_RADIUS * 4);
         Qt3DExtras::QPhongAlphaMaterial * const material = new Qt3DExtras::QPhongAlphaMaterial(mesh);
+        material->setObjectName("sphereMaterial");
         material->setShareable(true);
         material->setAmbient(DEF_SPHERE_CLR);
         material->setAlpha(1.f);
@@ -177,13 +181,38 @@ CMovablePlane::~CMovablePlane()
     delete d_ptr;
 }
 
+inline static bool setMaterialColor(QObject &root, const QColor &clr, const QString &objName)
+{
+    Qt3DExtras::QPhongAlphaMaterial * const material =
+            root.findChild <Qt3DExtras::QPhongAlphaMaterial *> (objName);
+    const bool result = (material != nullptr);
+    if(result)
+        material->setAmbient(clr);
+    return result;
+}
+
 void CMovablePlane::setColors(const QColor &sideA, const QColor &sideB,
                               const QColor &border, const QColor &spheres)
 {
+    Q_ASSERT(setMaterialColor(*this, sideA, "sideAMaterial"));
+    Q_ASSERT(setMaterialColor(*this, sideB, "sideBMaterial"));
+    Q_ASSERT(setMaterialColor(*this, border, "borderMaterial"));
+    Q_ASSERT(setMaterialColor(*this, spheres, "sphereMaterial"));
+}
 
+inline static bool setMaterialAlpha(QObject &root, const float alpha, const QString &objName)
+{
+    Qt3DExtras::QPhongAlphaMaterial * const material =
+            root.findChild <Qt3DExtras::QPhongAlphaMaterial *> (objName);
+    const bool result = (material != nullptr);
+    if(result)
+        material->setAlpha(alpha);
+    return result;
 }
 
 void CMovablePlane::setAlpha(const float alpha)
 {
-
+    Q_ASSERT(setMaterialColor(*this, alpha, "sideAMaterial"));
+    Q_ASSERT(setMaterialColor(*this, alpha, "sideBMaterial"));
+    Q_ASSERT(setMaterialColor(*this, alpha, "borderMaterial"));
 }
