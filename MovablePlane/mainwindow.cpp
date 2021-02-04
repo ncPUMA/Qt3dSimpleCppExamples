@@ -26,10 +26,13 @@ class MainWindowPrivate
 
     MainWindowPrivate() :
         scene(nullptr),
-        model(nullptr) { }
+        model(nullptr),
+        view(nullptr)
+    { }
 
     Qt3DCore::QEntity *scene;
     Qt3DCore::QEntity *model;
+    Qt3DExtras::Qt3DWindow *view;
 };
 
 
@@ -46,7 +49,7 @@ static const float FAR_PLAN = 1000.f;
 //model
 static const char* MDL_OBJ_PATH = "qrc:/v8_engine.obj";
 static const float DEF_Y_ROTATION = - 90.f;
-#include <Qt3DExtras>
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -72,26 +75,27 @@ MainWindow::MainWindow(QWidget *parent)
     d_ptr->model->addComponent(mdlMaterial);
 
     //Install viewport camera, and light
-    Qt3DExtras::Qt3DWindow * const view = new Qt3DExtras::Qt3DWindow();
+    d_ptr->view = new Qt3DExtras::Qt3DWindow();
     QVBoxLayout * const mainLay = new QVBoxLayout(ui->centralwidget);
-    mainLay->addWidget(createWindowContainer(view, ui->centralwidget));
+    mainLay->addWidget(createWindowContainer(d_ptr->view, ui->centralwidget));
 
-    view->camera()->lens()->setPerspectiveProjection(FIELD_VIEW, ASPECT_RATIO,
-                                                     NEAR_PLAN, FAR_PLAN);
+    d_ptr->view->camera()->lens()->setPerspectiveProjection(FIELD_VIEW, ASPECT_RATIO,
+                                                            NEAR_PLAN, FAR_PLAN);
 
-    view->camera()->setPosition(DEF_CAM_POS);
-    view->camera()->setViewCenter(DEF_CAM_VCENTR);
+    d_ptr->view->camera()->setPosition(DEF_CAM_POS);
+    d_ptr->view->camera()->setViewCenter(DEF_CAM_VCENTR);
 
-    view->setRootEntity(d_ptr->scene);
+    d_ptr->view->setRootEntity(d_ptr->scene);
 
     Qt3DExtras::QOrbitCameraController * const camerController =
-            new Qt3DExtras::QOrbitCameraController(view->camera());
-    camerController->setCamera(view->camera());
+            new Qt3DExtras::QOrbitCameraController(d_ptr->view->camera());
+    camerController->setCamera(d_ptr->view->camera());
+//    camerController->setEnabled(false);
 
     Qt3DRender::QPointLight * const lightSrc =
-            new Qt3DRender::QPointLight(view->camera());
+            new Qt3DRender::QPointLight(d_ptr->view->camera());
     lightSrc->setConstantAttenuation(.7f);
-    view->camera()->addComponent(lightSrc);
+    d_ptr->view->camera()->addComponent(lightSrc);
 }
 
 MainWindow::~MainWindow()
@@ -105,8 +109,18 @@ void MainWindow::slAddPlane()
 {
     CMovablePlane * const plane = new CMovablePlane(d_ptr->scene);
     Qt3DCore::QTransform * const transform = new Qt3DCore::QTransform(plane);
+    transform->setTranslation(QVector3D( - .5f, .5f, 0.f));
     transform->setRotationX(90.f);
 //    transform->setRotationZ(55.f);
     plane->addComponent(transform);
+    connect(plane, SIGNAL(sigMouseHovered(bool)), SLOT(slMouseUnderPlane(bool)));
+}
+
+void MainWindow::slMouseUnderPlane(bool contains)
+{
+    const Qt::CursorShape shape = contains ? Qt::OpenHandCursor : Qt::ArrowCursor;
+    QCursor cur = cursor();
+    cur.setShape(shape);
+    setCursor(cur);
 }
 

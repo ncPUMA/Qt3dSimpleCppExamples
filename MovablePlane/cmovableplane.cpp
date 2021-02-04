@@ -14,6 +14,8 @@
 #include <Qt3DRender/QEffect>
 #include <Qt3DRender/QRenderPass>
 #include <Qt3DRender/QNoDepthMask>
+#include <Qt3DRender/QObjectPicker>
+#include <Qt3DRender/QPickEvent>
 
 static const QSizeF DEF_SIZE = QSizeF(1.f, 1.f);
 static const float DEF_ALPHA = .5f;
@@ -23,29 +25,22 @@ static const QColor DEF_BORDER_CLR = QColor(Qt::blue);
 static const float DEF_BORDER_RADIUS = 0.005f;
 static const QColor DEF_SPHERE_CLR = QColor(Qt::gray);
 
-inline static Qt3DCore::QTransform& createBorder(Qt3DCore::QEntity &parent,
-                                                 Qt3DRender::QGeometryRenderer &render,
-                                                 Qt3DRender::QMaterial &material)
+enum EN_Points
 {
-    Qt3DCore::QEntity * const border = new Qt3DCore::QEntity(&parent);
-    Qt3DCore::QTransform * const transform = new Qt3DCore::QTransform(border);
-    border->addComponent(transform);
-    border->addComponent(&render);
-    border->addComponent(&material);
-    return *transform;
-}
+    ENP_FIRST = 0,
 
-inline static Qt3DCore::QTransform& createSphere(Qt3DCore::QEntity &parent,
-                                                 Qt3DRender::QGeometryRenderer &render,
-                                                 Qt3DRender::QMaterial &material)
-{
-    Qt3DCore::QEntity * const sphere = new Qt3DCore::QEntity(&parent);
-    Qt3DCore::QTransform * const transform = new Qt3DCore::QTransform(sphere);
-    sphere->addComponent(transform);
-    sphere->addComponent(&render);
-    sphere->addComponent(&material);
-    return *transform;
-}
+    ENP_TOP_LEFT = ENP_FIRST,
+    ENP_TOP,
+    ENP_TOP_RIGHT,
+    ENP_LEFT,
+    ENP_BOTTOM_LEFT,
+    ENP_BOTTOM,
+    ENP_BOTTOM_RIGHT,
+    ENP_RIGHT,
+
+    ENP_LAST
+};
+typedef int TPoint;
 
 inline static void removeNoDepthTest(Qt3DRender::QMaterial &material)
 {
@@ -64,107 +59,190 @@ inline static void removeNoDepthTest(Qt3DRender::QMaterial &material)
             }
 }
 
+inline static void removeTransform(Qt3DCore::QEntity &parent)
+{
+    foreach(Qt3DCore::QTransform * const tr, parent.componentsOfType <Qt3DCore::QTransform> ())
+    {
+        parent.removeComponent(tr);
+        tr->deleteLater();
+    }
+}
+
 
 class CMovablePlanePrivate
 {
     friend class CMovablePlane;
 
-    CMovablePlanePrivate(CMovablePlane * const qptr)
+    CMovablePlanePrivate(CMovablePlane * const qptr) :
+        size(DEF_SIZE),
+        sideA(new Qt3DCore::QEntity(qptr)),
+        sideAMesh(new Qt3DExtras::QPlaneMesh(sideA)),
+        sideAMaterial(new Qt3DExtras::QPhongAlphaMaterial(sideA)),
+        sideB(new Qt3DCore::QEntity(qptr)),
+        sideBMesh(new Qt3DExtras::QPlaneMesh(sideB)),
+        sideBMaterial(new Qt3DExtras::QPhongAlphaMaterial(sideB)),
+        borderMaterial(new Qt3DExtras::QPhongAlphaMaterial(sideA)),
+        cubeMesh(new Qt3DExtras::QCuboidMesh(sideA)),
+        cubeMaterial(new Qt3DExtras::QPhongAlphaMaterial(sideA))
     {
         //planes
-        Qt3DCore::QEntity * const sideA = new Qt3DCore::QEntity(qptr);
-        Qt3DExtras::QPlaneMesh * const sideAMesh = new Qt3DExtras::QPlaneMesh(sideA);
-        sideAMesh->setWidth(DEF_SIZE.width());
-        sideAMesh->setHeight(DEF_SIZE.height());
-        Qt3DExtras::QPhongAlphaMaterial * const sideAMaterial = new Qt3DExtras::QPhongAlphaMaterial(sideA);
-        sideAMaterial->setObjectName("sideAMaterial");
+        sideAMesh->setWidth(size.width());
+        sideAMesh->setHeight(size.height());
         sideAMaterial->setAmbient(DEF_A_CLR);
         sideAMaterial->setAlpha(DEF_ALPHA);
         sideA->addComponent(sideAMesh);
         sideA->addComponent(sideAMaterial);
-
-        Qt3DCore::QEntity * const sideB = new Qt3DCore::QEntity(qptr);
-        Qt3DCore::QTransform * const sideBTr = new Qt3DCore::QTransform(sideB);
-        sideBTr->setRotationX(180.f);
-        Qt3DExtras::QPlaneMesh * const sideBMesh = new Qt3DExtras::QPlaneMesh(sideB);
-        sideBMesh->setWidth(DEF_SIZE.width());
-        sideBMesh->setHeight(DEF_SIZE.height());
-        Qt3DExtras::QPhongAlphaMaterial * const sideBMaterial = new Qt3DExtras::QPhongAlphaMaterial(sideB);
-        sideAMaterial->setObjectName("sideBMaterial");
+        sideBMesh->setWidth(size.width());
+        sideBMesh->setHeight(size.height());
         sideBMaterial->setAmbient(DEF_B_CLR);
         sideBMaterial->setAlpha(DEF_ALPHA);
-        sideB->addComponent(sideBTr);
         sideB->addComponent(sideBMesh);
         sideB->addComponent(sideBMaterial);
+        updatePlaneTransform();
 
-        createBorders(*sideA);
-        createSpheres(*sideA);
-    }
-
-    void createBorders(Qt3DCore::QEntity &sideA)
-    {
-        Qt3DExtras::QCylinderMesh * const mesh = new Qt3DExtras::QCylinderMesh(&sideA);
-        mesh->setShareable(true);
-        mesh->setRadius(DEF_BORDER_RADIUS);
-        mesh->setLength(DEF_SIZE.height());
-        mesh->setSlices(10);
-        mesh->setRings(2);
-        Qt3DExtras::QPhongAlphaMaterial * const material = new Qt3DExtras::QPhongAlphaMaterial(mesh);
-        material->setObjectName("borderMaterial");
-        material->setShareable(true);
-        material->setAmbient(DEF_BORDER_CLR);
-        material->setAlpha(DEF_ALPHA);
-        removeNoDepthTest(*material);
-
-        const float antiRotationAngle = 90.f;
-        //left
-        Qt3DCore::QTransform &lftTr = createBorder(sideA, *mesh, *material);
-        lftTr.setRotationX(antiRotationAngle);
-        lftTr.setTranslation(QVector3D( - DEF_SIZE.width() / 2, .0f, .0f));
-        //right
-        Qt3DCore::QTransform &rightTr = createBorder(sideA, *mesh, *material);
-        rightTr.setRotationX(antiRotationAngle);
-        rightTr.setTranslation(QVector3D(DEF_SIZE.width() / 2, .0f, .0f));
-        //top
-        Qt3DCore::QTransform &topTr = createBorder(sideA, *mesh, *material);
-        topTr.setRotationZ(antiRotationAngle);
-        topTr.setTranslation(QVector3D(0.f, 0.f, - DEF_SIZE.height() / 2));
-        //bottom
-        Qt3DCore::QTransform &bottomTr = createBorder(sideA, *mesh, *material);
-        bottomTr.setRotationZ(antiRotationAngle);
-        bottomTr.setTranslation(QVector3D(0.f, 0.f, DEF_SIZE.height() / 2));
-    }
-
-    void createSpheres(Qt3DCore::QEntity &sideA)
-    {
-        Qt3DExtras::QCuboidMesh * const mesh = new Qt3DExtras::QCuboidMesh(&sideA);
-        mesh->setShareable(true);
-        mesh->setXExtent(DEF_BORDER_RADIUS * 4);
-        mesh->setYExtent(DEF_BORDER_RADIUS * 4);
-        mesh->setZExtent(DEF_BORDER_RADIUS * 4);
-        Qt3DExtras::QPhongAlphaMaterial * const material = new Qt3DExtras::QPhongAlphaMaterial(mesh);
-        material->setObjectName("sphereMaterial");
-        material->setShareable(true);
-        material->setAmbient(DEF_SPHERE_CLR);
-        material->setAlpha(1.f);
-        removeNoDepthTest(*material);
-
-        static const std::vector < std::pair <float, float> > deltas = {
-            { - DEF_SIZE.width() / 2, - DEF_SIZE.height() / 2 },
-            {                    .0f, - DEF_SIZE.height() / 2 },
-            {   DEF_SIZE.width() / 2, - DEF_SIZE.height() / 2 },
-            { - DEF_SIZE.width() / 2, .0f                     },
-            {   DEF_SIZE.width() / 2, .0f                     },
-            { - DEF_SIZE.width() / 2,   DEF_SIZE.height() / 2 },
-            {                    0.f,   DEF_SIZE.height() / 2 },
-            {   DEF_SIZE.width() / 2,   DEF_SIZE.height() / 2 }
+        //borders
+        borderMaterial->setShareable(true);
+        borderMaterial->setAmbient(DEF_BORDER_CLR);
+        borderMaterial->setAlpha(DEF_ALPHA);
+        removeNoDepthTest(*borderMaterial);
+        const std::vector <TPoint> borderPoints = {
+            ENP_LEFT,
+            ENP_RIGHT,
+            ENP_TOP,
+            ENP_BOTTOM
         };
-        for(auto &pair : deltas)
+        for(auto point : borderPoints) {
+            Qt3DCore::QEntity * const border = new Qt3DCore::QEntity(sideA);
+            Qt3DExtras::QCylinderMesh * const borderMesh = new Qt3DExtras::QCylinderMesh(border);
+            borderMesh->setShareable(true);
+            borderMesh->setRadius(DEF_BORDER_RADIUS);
+            borderMesh->setSlices(10);
+            borderMesh->setRings(2);
+            border->addComponent(borderMesh);
+            border->addComponent(borderMaterial);
+            updateBorderTransform(point, *border, *borderMesh);
+            borderMap[point] = std::make_pair(border, borderMesh);
+        }
+
+        //cubes
+        cubeMesh->setShareable(true);
+        cubeMesh->setXExtent(DEF_BORDER_RADIUS * 4);
+        cubeMesh->setYExtent(DEF_BORDER_RADIUS * 4);
+        cubeMesh->setZExtent(DEF_BORDER_RADIUS * 4);
+        cubeMaterial->setShareable(true);
+        cubeMaterial->setAmbient(DEF_SPHERE_CLR);
+        cubeMaterial->setAlpha(1.f);
+        removeNoDepthTest(*cubeMaterial);
+        for(TPoint i = ENP_FIRST; i < ENP_LAST; ++i) {
+            Qt3DCore::QEntity * const cube = new Qt3DCore::QEntity(sideA);
+            cube->addComponent(cubeMesh);
+            cube->addComponent(cubeMaterial);
+            updateCubeTransform(*cube, i);
+            cubeMap[i] = cube;
+        }
+
+        //input
+        Qt3DRender::QObjectPicker * const picker = new Qt3DRender::QObjectPicker(sideA);
+        picker->setObjectName("mover");
+        picker->setDragEnabled(true);
+        picker->setHoverEnabled(true);
+        sideA->addComponent(picker);
+        QObject::connect(picker, SIGNAL(containsMouseChanged(bool)),
+                         qptr, SLOT(slContainsMouseChanged(bool)));
+        QObject::connect(picker, SIGNAL(exited()), qptr, SLOT(slHoverExited()));
+    }
+
+    void updatePlaneTransform()
+    {
+        sideAMesh->setWidth(size.width());
+        sideAMesh->setHeight(size.height());
+        removeTransform(*sideA);
+        Qt3DCore::QTransform * const sideATr = new Qt3DCore::QTransform(sideA);
+        sideATr->setTranslation(QVector3D(size.width() / 2, 0.f, size.height() / 2));
+        sideA->addComponent(sideATr);
+        sideBMesh->setWidth(size.width());
+        sideBMesh->setHeight(size.height());
+        removeTransform(*sideB);
+        Qt3DCore::QTransform * const sideBTr = new Qt3DCore::QTransform(sideB);
+        sideBTr->setTranslation(sideATr->translation());
+        sideBTr->setRotationX( - 180.f);
+        sideB->addComponent(sideBTr);
+    }
+
+    void updateBorderTransform(const TPoint point,
+                               Qt3DCore::QEntity &border,
+                               Qt3DExtras::QCylinderMesh &borderMesh)
+    {
+        removeTransform(border);
+        Qt3DCore::QTransform * const transform = new Qt3DCore::QTransform(&border);
+        const float antiRotationAngle = 90.f;
+        switch(point)
         {
-            Qt3DCore::QTransform &tr = createSphere(sideA, *mesh, *material);
-            tr.setTranslation(QVector3D(pair.first, .0f, pair.second));
+            case ENP_LEFT:
+                transform->setRotationX( - antiRotationAngle);
+                transform->setTranslation(QVector3D( - size.width() / 2, .0f, .0f));
+                borderMesh.setLength(size.height());
+                break;
+            case ENP_RIGHT:
+                transform->setRotationX( - antiRotationAngle);
+                transform->setTranslation(QVector3D(size.width() / 2, .0f, .0f));
+                borderMesh.setLength(size.height());
+                break;
+            case ENP_TOP:
+                transform->setRotationZ(antiRotationAngle);
+                transform->setTranslation(QVector3D(0.f, 0.f, - size.height() / 2));
+                borderMesh.setLength(size.width());
+                break;
+            case ENP_BOTTOM:
+                transform->setRotationZ(antiRotationAngle);
+                transform->setTranslation(QVector3D(0.f, 0.f, size.height() / 2));
+                borderMesh.setLength(size.width());
+                break;
+            default:
+                break;
+        }
+        border.addComponent(transform);
+    }
+
+    void updateCubeTransform(Qt3DCore::QEntity &parent, const TPoint point)
+    {
+        removeTransform(parent);
+        const std::map <TPoint, std::pair <float, float> > deltas = {
+            { ENP_TOP_LEFT    , { - size.width() / 2, - size.height() / 2      } },
+            { ENP_TOP         , {                     .0f, - size.height() / 2 } },
+            { ENP_TOP_RIGHT   , {   size.width() / 2, - size.height() / 2      } },
+            { ENP_LEFT        , { - size.width() / 2, .0f                      } },
+            { ENP_BOTTOM_LEFT , {   size.width() / 2, .0f                      } },
+            { ENP_BOTTOM      , { - size.width() / 2,   size.height() / 2      } },
+            { ENP_BOTTOM_RIGHT, {                0.f,   size.height() / 2      } },
+            { ENP_RIGHT       , {   size.width() / 2,   size.height() / 2      } }
+        };
+        auto it = deltas.find(point);
+        if (it != deltas.cend()) {
+            Qt3DCore::QTransform * const transform = new Qt3DCore::QTransform(&parent);
+            transform->setTranslation(QVector3D(it->second.first, .0f, it->second.second));
+            parent.addComponent(transform);
         }
     }
+
+    QSizeF size;
+
+    //plane
+    Qt3DCore::QEntity * const sideA;
+    Qt3DExtras::QPlaneMesh * const sideAMesh;
+    Qt3DExtras::QPhongAlphaMaterial * const sideAMaterial;
+    Qt3DCore::QEntity * const sideB;
+    Qt3DExtras::QPlaneMesh * const sideBMesh;
+    Qt3DExtras::QPhongAlphaMaterial * const sideBMaterial;
+
+    //border
+    Qt3DExtras::QPhongAlphaMaterial * const borderMaterial;
+    std::map <TPoint, std::pair <Qt3DCore::QEntity *, Qt3DExtras::QCylinderMesh *> > borderMap;
+
+    //cubes
+    Qt3DExtras::QCuboidMesh * const cubeMesh;
+    Qt3DExtras::QPhongAlphaMaterial * const cubeMaterial;
+    std::map <TPoint, Qt3DCore::QEntity *> cubeMap;
 };
 
 
@@ -181,6 +259,13 @@ CMovablePlane::~CMovablePlane()
     delete d_ptr;
 }
 
+QVector3D CMovablePlane::getPos() const
+{
+    const QVector <Qt3DCore::QTransform *> trVec = componentsOfType <Qt3DCore::QTransform> ();
+    Q_ASSERT(trVec.size() == 1);
+    return trVec.front()->translation();
+}
+
 inline static bool setMaterialColor(QObject &root, const QColor &clr, const QString &objName)
 {
     Qt3DExtras::QPhongAlphaMaterial * const material =
@@ -192,12 +277,12 @@ inline static bool setMaterialColor(QObject &root, const QColor &clr, const QStr
 }
 
 void CMovablePlane::setColors(const QColor &sideA, const QColor &sideB,
-                              const QColor &border, const QColor &spheres)
+                              const QColor &border, const QColor &cubes)
 {
-    Q_ASSERT(setMaterialColor(*this, sideA, "sideAMaterial"));
-    Q_ASSERT(setMaterialColor(*this, sideB, "sideBMaterial"));
-    Q_ASSERT(setMaterialColor(*this, border, "borderMaterial"));
-    Q_ASSERT(setMaterialColor(*this, spheres, "sphereMaterial"));
+    d_ptr->sideAMaterial->setAmbient(sideA);
+    d_ptr->sideBMaterial->setAmbient(sideB);
+    d_ptr->borderMaterial->setAmbient(border);
+    d_ptr->cubeMaterial->setAmbient(cubes);
 }
 
 inline static bool setMaterialAlpha(QObject &root, const float alpha, const QString &objName)
@@ -212,7 +297,34 @@ inline static bool setMaterialAlpha(QObject &root, const float alpha, const QStr
 
 void CMovablePlane::setAlpha(const float alpha)
 {
-    Q_ASSERT(setMaterialColor(*this, alpha, "sideAMaterial"));
-    Q_ASSERT(setMaterialColor(*this, alpha, "sideBMaterial"));
-    Q_ASSERT(setMaterialColor(*this, alpha, "borderMaterial"));
+    d_ptr->sideAMaterial->setAlpha(alpha);
+    d_ptr->sideBMaterial->setAlpha(alpha);
+    d_ptr->borderMaterial->setAlpha(alpha);
+}
+
+void CMovablePlane::slContainsMouseChanged(bool containsMouse)
+{
+    emit sigMouseHovered(containsMouse);
+}
+
+QSizeF CMovablePlane::getSize() const
+{
+    return d_ptr->size;
+}
+
+void CMovablePlane::setPos(const QVector3D &pos)
+{
+    const QVector <Qt3DCore::QTransform *> trVec = componentsOfType <Qt3DCore::QTransform> ();
+    Q_ASSERT(trVec.size() == 1);
+    trVec.front()->setTranslation(pos);
+}
+
+void CMovablePlane::setSize(const QSizeF &size)
+{
+    d_ptr->size = size;
+    d_ptr->updatePlaneTransform();
+    for(auto &pair : d_ptr->borderMap)
+        d_ptr->updateBorderTransform(pair.first, *pair.second.first, *pair.second.second);
+    for(auto &pair : d_ptr->cubeMap)
+        d_ptr->updateCubeTransform(*pair.second, pair.first);
 }

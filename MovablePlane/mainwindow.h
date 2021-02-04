@@ -20,6 +20,8 @@ public:
 private slots:
     void slAddPlane();
 
+    void slMouseUnderPlane(bool contains);
+
 private:
     Ui::MainWindow *ui;
 
