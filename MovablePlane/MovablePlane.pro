@@ -29,4 +29,6 @@ RESOURCES += \
     res.qrc
 
 DISTFILES += \
+    eng.geom \
+    eng.vert \
     v8_engine.obj

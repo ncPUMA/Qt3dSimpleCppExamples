@@ -3,6 +3,7 @@
 
 #include <QVBoxLayout>
 #include <QToolBar>
+#include <QFile>
 
 #include <Qt3DCore/QEntity>
 #include <Qt3DCore/QTransform>
@@ -10,6 +11,10 @@
 #include <Qt3DRender/QMesh>
 #include <Qt3DRender/QCamera>
 #include <Qt3DRender/QCameraLens>
+#include <Qt3DRender/QEffect>
+#include <Qt3DRender/QTechnique>
+#include <Qt3DRender/QRenderPass>
+#include <Qt3DRender/QClipPlane>
 
 #include <Qt3DExtras/QMetalRoughMaterial>
 #include <Qt3DExtras/Qt3DWindow>
@@ -27,12 +32,16 @@ class MainWindowPrivate
     MainWindowPrivate() :
         scene(nullptr),
         model(nullptr),
-        view(nullptr)
+        view(nullptr),
+        camerController(nullptr),
+        plane(nullptr)
     { }
 
     Qt3DCore::QEntity *scene;
     Qt3DCore::QEntity *model;
     Qt3DExtras::Qt3DWindow *view;
+    Qt3DExtras::QOrbitCameraController *camerController;
+    CMovablePlane *plane;
 };
 
 
@@ -49,15 +58,13 @@ static const float FAR_PLAN = 1000.f;
 //model
 static const char* MDL_OBJ_PATH = "qrc:/v8_engine.obj";
 static const float DEF_Y_ROTATION = - 90.f;
-
+#include <QParameter>
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
     , d_ptr(new MainWindowPrivate())
 {
     ui->setupUi(this);
-
-    connect(ui->pbAddPlane, SIGNAL(clicked(bool)), SLOT(slAddPlane()));
 
     //Build main scene
     d_ptr->scene = new Qt3DCore::QEntity();
@@ -70,6 +77,31 @@ MainWindow::MainWindow(QWidget *parent)
     loader->setSource(QUrl(MDL_OBJ_PATH));
     Qt3DExtras::QMetalRoughMaterial * const mdlMaterial =
             new Qt3DExtras::QMetalRoughMaterial(d_ptr->model);
+    std::map <QString, QByteArray> shProgs = {
+        { ":/eng.vert", QByteArray() },
+        { ":/eng.geom", QByteArray() }
+    };
+    for(auto &pair : shProgs)
+    {
+        QFile shaderFile(pair.first);
+        if (shaderFile.open(QIODevice::ReadOnly | QIODevice::Text))
+        {
+            shProgs[pair.first] = shaderFile.readAll();;
+            shaderFile.close();
+        }
+        else
+            qDebug() << "CClipMaterialPrivate::CClipMaterialPrivate: err load vertex shader"
+                     << pair.first << " "
+                     << shaderFile.errorString();
+    }
+
+    foreach(QTechnique * const technique, mdlMaterial->effect()->techniques())
+        foreach(QRenderPass * const pass, technique->renderPasses())
+        {
+            QShaderProgram * const shProg = pass->shaderProgram();
+            shProg->setVertexShaderCode(shProgs[QString(":/eng.vert")]);
+            shProg->setGeometryShaderCode(shProgs[QString(":/eng.geom")]);
+        }
     mdlMaterial->setBaseColor(QColor(Qt::gray));
     d_ptr->model->addComponent(loader);
     d_ptr->model->addComponent(mdlMaterial);
@@ -87,15 +119,34 @@ MainWindow::MainWindow(QWidget *parent)
 
     d_ptr->view->setRootEntity(d_ptr->scene);
 
-    Qt3DExtras::QOrbitCameraController * const camerController =
-            new Qt3DExtras::QOrbitCameraController(d_ptr->view->camera());
-    camerController->setCamera(d_ptr->view->camera());
-//    camerController->setEnabled(false);
+    d_ptr->camerController = new Qt3DExtras::QOrbitCameraController(d_ptr->view->camera());
+    d_ptr->camerController->setCamera(d_ptr->view->camera());
 
-    Qt3DRender::QPointLight * const lightSrc =
-            new Qt3DRender::QPointLight(d_ptr->view->camera());
+    QPointLight * const lightSrc = new QPointLight(d_ptr->view->camera());
     lightSrc->setConstantAttenuation(.7f);
     d_ptr->view->camera()->addComponent(lightSrc);
+
+    //demo
+    d_ptr->plane = new CMovablePlane(d_ptr->scene);
+    Qt3DCore::QTransform * const transform = new Qt3DCore::QTransform(d_ptr->plane);
+    transform->setRotationX(90);
+    transform->setTranslation(QVector3D(-0.5f, 0.5f, 0.f));
+    d_ptr->plane->addComponent(transform);
+    connect(d_ptr->plane, SIGNAL(sigMouseHovered(bool)), SLOT(slMouseUnderPlane(bool)));
+
+    connect(ui->rbCamera, SIGNAL(toggled(bool)), SLOT(slRadioButtonsChanged(bool)));
+    connect(ui->rbMove  , SIGNAL(toggled(bool)), SLOT(slRadioButtonsChanged(bool)));
+    connect(ui->rbRotate, SIGNAL(toggled(bool)), SLOT(slRadioButtonsChanged(bool)));
+    connect(ui->rbResize, SIGNAL(toggled(bool)), SLOT(slRadioButtonsChanged(bool)));
+
+    ui->rbMove->toggle();
+
+    connect(ui->pbClip, SIGNAL(clicked(bool)), SLOT(slPbClip()));
+
+    QParameter * const param = new QParameter(mdlMaterial->effect());
+    param->setName("plane");
+    param->setValue(QVector4D(0, 0, 0, 0));
+    mdlMaterial->effect()->addParameter(param);
 }
 
 MainWindow::~MainWindow()
@@ -105,22 +156,51 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
-void MainWindow::slAddPlane()
-{
-    CMovablePlane * const plane = new CMovablePlane(d_ptr->scene);
-    Qt3DCore::QTransform * const transform = new Qt3DCore::QTransform(plane);
-    transform->setTranslation(QVector3D( - .5f, .5f, 0.f));
-    transform->setRotationX(90.f);
-//    transform->setRotationZ(55.f);
-    plane->addComponent(transform);
-    connect(plane, SIGNAL(sigMouseHovered(bool)), SLOT(slMouseUnderPlane(bool)));
-}
-
 void MainWindow::slMouseUnderPlane(bool contains)
 {
     const Qt::CursorShape shape = contains ? Qt::OpenHandCursor : Qt::ArrowCursor;
     QCursor cur = cursor();
     cur.setShape(shape);
     setCursor(cur);
+}
+
+void MainWindow::slRadioButtonsChanged(bool toggled)
+{
+    using namespace MovablePlane;
+
+    if (toggled)
+    {
+        const std::map <QObject *, TTransformationMode> modes = {
+            { ui->rbCamera, ENTM_OFF    },
+            { ui->rbMove  , ENTM_MOVE   },
+            { ui->rbRotate, ENTM_ROTATE },
+            { ui->rbResize, ENTM_RESIZE }
+        };
+        auto it = modes.find(sender());
+        if (it != modes.cend())
+        {
+            d_ptr->plane->setTransformationMode(it->second);
+            d_ptr->camerController->setEnabled(it->second == ENTM_OFF);
+        }
+    }
+}
+
+void MainWindow::slPbClip()
+{
+    auto plTrVec = d_ptr->plane->componentsOfType <Qt3DCore::QTransform> ();
+    Q_ASSERT(plTrVec.size() > 0);
+    Qt3DCore::QTransform * const transform = plTrVec.front();
+    const QVector3D wPoint = transform->matrix() * QVector3D(0.f, 0.f, 0.f);
+    const QVector3D wNorm = transform->matrix() * QVector3D(0.f, 1.0f, 0.f) - wPoint;
+    const QVector3D mul = wNorm * wPoint;
+    const QVector4D plVec(wNorm.x(), wNorm.y(), wNorm.z(), - mul.x() - mul.y() - mul.z());
+
+    auto matVec = d_ptr->model->componentsOfType <QMaterial> ();
+    Q_ASSERT(matVec.size() > 0);
+    foreach(QParameter * const param, matVec.front()->effect()->parameters())
+    {
+        if (param->name() == QString("plane"))
+            param->setValue(plVec);
+    }
 }
 

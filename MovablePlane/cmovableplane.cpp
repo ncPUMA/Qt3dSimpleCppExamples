@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <utility>
+#include <cmath>
 
 #include <Qt3DExtras/QPlaneMesh>
 #include <Qt3DExtras/QPhongAlphaMaterial>
@@ -16,6 +17,10 @@
 #include <Qt3DRender/QNoDepthMask>
 #include <Qt3DRender/QObjectPicker>
 #include <Qt3DRender/QPickEvent>
+#include <Qt3DRender/QViewport>
+#include <Qt3DRender/QCameraSelector>
+#include <Qt3DRender/QCamera>
+#include <Qt3DRender/QRenderSurfaceSelector>
 
 static const QSizeF DEF_SIZE = QSizeF(1.f, 1.f);
 static const float DEF_ALPHA = .5f;
@@ -24,6 +29,7 @@ static const QColor DEF_B_CLR = QColor(Qt::red);
 static const QColor DEF_BORDER_CLR = QColor(Qt::blue);
 static const float DEF_BORDER_RADIUS = 0.005f;
 static const QColor DEF_SPHERE_CLR = QColor(Qt::gray);
+static const float DEF_ROTATE_SPEED = 3.f;
 
 enum EN_Points
 {
@@ -69,11 +75,16 @@ inline static void removeTransform(Qt3DCore::QEntity &parent)
 }
 
 
+
+using namespace MovablePlane;
+
 class CMovablePlanePrivate
 {
     friend class CMovablePlane;
 
     CMovablePlanePrivate(CMovablePlane * const qptr) :
+        q_ptr(qptr),
+        transformMode(ENTM_MOVE),
         size(DEF_SIZE),
         sideA(new Qt3DCore::QEntity(qptr)),
         sideAMesh(new Qt3DExtras::QPlaneMesh(sideA)),
@@ -142,14 +153,19 @@ class CMovablePlanePrivate
         }
 
         //input
-        Qt3DRender::QObjectPicker * const picker = new Qt3DRender::QObjectPicker(sideA);
+        Qt3DRender::QObjectPicker * const picker = new Qt3DRender::QObjectPicker(qptr);
         picker->setObjectName("mover");
         picker->setDragEnabled(true);
         picker->setHoverEnabled(true);
-        sideA->addComponent(picker);
+        qptr->addComponent(picker);
         QObject::connect(picker, SIGNAL(containsMouseChanged(bool)),
                          qptr, SLOT(slContainsMouseChanged(bool)));
-        QObject::connect(picker, SIGNAL(exited()), qptr, SLOT(slHoverExited()));
+        QObject::connect(picker, SIGNAL(pressed(Qt3DRender::QPickEvent*)),
+                         qptr, SLOT(slPressed(Qt3DRender::QPickEvent*)));
+        QObject::connect(picker, SIGNAL(released(Qt3DRender::QPickEvent*)),
+                         qptr, SLOT(slReleased(Qt3DRender::QPickEvent*)));
+        QObject::connect(picker, SIGNAL(moved(Qt3DRender::QPickEvent*)),
+                         qptr, SLOT(slMoved(Qt3DRender::QPickEvent*)));
     }
 
     void updatePlaneTransform()
@@ -225,6 +241,17 @@ class CMovablePlanePrivate
         }
     }
 
+    Qt3DCore::QTransform& rootTransform()
+    {
+        const QVector <Qt3DCore::QTransform *> trVec =
+                q_ptr->componentsOfType <Qt3DCore::QTransform> ();
+        Q_ASSERT(trVec.size() == 1);
+        return *trVec.front();
+    }
+
+    CMovablePlane * const q_ptr;
+    TTransformationMode transformMode;
+    QVector3D lastPos;
     QSizeF size;
 
     //plane
@@ -261,9 +288,7 @@ CMovablePlane::~CMovablePlane()
 
 QVector3D CMovablePlane::getPos() const
 {
-    const QVector <Qt3DCore::QTransform *> trVec = componentsOfType <Qt3DCore::QTransform> ();
-    Q_ASSERT(trVec.size() == 1);
-    return trVec.front()->translation();
+    return d_ptr->rootTransform().translation();
 }
 
 inline static bool setMaterialColor(QObject &root, const QColor &clr, const QString &objName)
@@ -307,16 +332,158 @@ void CMovablePlane::slContainsMouseChanged(bool containsMouse)
     emit sigMouseHovered(containsMouse);
 }
 
+void CMovablePlane::slPressed(Qt3DRender::QPickEvent *pic)
+{
+    d_ptr->lastPos = pic->worldIntersection();
+//    qDebug() << "pressed";
+}
+
+void CMovablePlane::slReleased(Qt3DRender::QPickEvent *pic)
+{
+    (void)pic;
+//    qDebug() << "released";
+}
+
+inline static QVector3D dropAxis(const QVector3D &axisVec, const QVector3D &delta)
+{
+    QVector3D viewVec = axisVec;
+    viewVec.setX(fabs(viewVec.x()));
+    viewVec.setY(fabs(viewVec.y()));
+    viewVec.setZ(fabs(viewVec.z()));
+    QVector3D result = delta;
+    if (viewVec.x() > viewVec.y() && viewVec.x() > viewVec.z())
+        result.setX(0.f);
+    else if (viewVec.y() > viewVec.x() && viewVec.y() > viewVec.z())
+        result.setY(0.f);
+    else if (viewVec.z() > viewVec.x() && viewVec.z() > viewVec.y())
+        result.setZ(0.f);
+    return result;
+}
+
+inline static QVector3D dropAxisAndInvert(const QVector3D &axisVec, const QVector3D &delta)
+{
+    QVector3D viewVec = axisVec;
+    viewVec.setX(fabs(viewVec.x()));
+    viewVec.setY(fabs(viewVec.y()));
+    viewVec.setZ(fabs(viewVec.z()));
+    QVector3D result;
+    if (viewVec.x() > viewVec.y() && viewVec.x() > viewVec.z())
+    {
+        result.setX(0.f);
+        result.setY(delta.z());
+        result.setZ(delta.y());
+        if (fabs(result.y()) > fabs(result.z()))
+            result.setZ(0.f);
+        else
+            result.setY(0.f);
+    }
+    else if (viewVec.y() > viewVec.x() && viewVec.y() > viewVec.z())
+    {
+        result.setX(delta.z());
+        result.setY(0.f);
+        result.setZ(delta.x());
+        if (fabs(result.x()) > fabs(result.z()))
+            result.setZ(0.f);
+        else
+            result.setX(0.f);
+    }
+    else if (viewVec.z() > viewVec.x() && viewVec.z() > viewVec.y())
+    {
+        result.setX(delta.y());
+        result.setY(delta.x());
+        result.setZ(0.f);
+        if (fabs(result.x()) > fabs(result.y()))
+            result.setY(0.f);
+        else
+            result.setX(0.f);
+    }
+    return result;
+}
+
+void CMovablePlane::slMoved(Qt3DRender::QPickEvent *pic)
+{
+    if (d_ptr->transformMode == ENTM_OFF)
+        return;
+
+    const QVector <Qt3DCore::QNode *> chNodeVec = pic->viewport()->childNodes();
+    Q_ASSERT(chNodeVec.size() > 0);
+    const Qt3DRender::QCameraSelector * const camSelector =
+            qobject_cast <Qt3DRender::QCameraSelector *> (chNodeVec.front());
+    Q_ASSERT(camSelector != nullptr);
+    const Qt3DRender::QCamera * const camera =
+            qobject_cast <const Qt3DRender::QCamera * const> (camSelector->camera());
+
+    const QVector3D delta = pic->worldIntersection() - d_ptr->lastPos;
+
+    switch(d_ptr->transformMode)
+    {
+        case ENTM_MOVE:
+        {
+            QVector3D resDelta;
+            switch(pic->buttons())
+            {
+                case Qt3DRender::QPickEvent::LeftButton:
+                    resDelta = dropAxis(camera->viewVector(), delta);
+                    d_ptr->rootTransform().setTranslation(d_ptr->rootTransform().translation() + resDelta);
+                    break;
+                case Qt3DRender::QPickEvent::RightButton:
+                    resDelta = dropAxis(camera->upVector(), delta);
+                    d_ptr->rootTransform().setTranslation(d_ptr->rootTransform().translation() + resDelta);
+                    break;
+                default:
+                    break;
+            }
+            break;
+        }
+        case ENTM_RESIZE:
+            break;
+        case ENTM_ROTATE:
+        {
+            QVector3D resDelta;
+            QMatrix4x4 transform = d_ptr->rootTransform().matrix();
+            const QVector3D sizeVec(d_ptr->size.width() / 2.f, 0.f, d_ptr->size.height() / 2.f);
+            switch(pic->buttons())
+            {
+                case Qt3DRender::QPickEvent::LeftButton:
+                    resDelta = dropAxisAndInvert(camera->viewVector(), delta).normalized();
+                    transform.translate(sizeVec);
+                    transform.rotate(DEF_ROTATE_SPEED, resDelta);
+                    transform.translate( - sizeVec);
+                    d_ptr->rootTransform().setMatrix(transform);
+                    break;
+                case Qt3DRender::QPickEvent::RightButton:
+                    resDelta = dropAxisAndInvert(camera->upVector(), delta).normalized();
+                    transform.translate(sizeVec);
+                    transform.rotate(DEF_ROTATE_SPEED, resDelta);
+                    transform.translate( - sizeVec);
+                    d_ptr->rootTransform().setMatrix(transform);
+                    break;
+                default:
+                    break;
+            }
+            break;
+        }
+            break;
+        default:
+            return;
+    }
+
+    d_ptr->lastPos = pic->worldIntersection();
+}
+
 QSizeF CMovablePlane::getSize() const
 {
     return d_ptr->size;
 }
 
+void CMovablePlane::setTransformationMode(const TTransformationMode mode)
+{
+    d_ptr->transformMode = mode;
+}
+
 void CMovablePlane::setPos(const QVector3D &pos)
 {
-    const QVector <Qt3DCore::QTransform *> trVec = componentsOfType <Qt3DCore::QTransform> ();
-    Q_ASSERT(trVec.size() == 1);
-    trVec.front()->setTranslation(pos);
+    d_ptr->rootTransform().setTranslation(pos);
 }
 
 void CMovablePlane::setSize(const QSizeF &size)

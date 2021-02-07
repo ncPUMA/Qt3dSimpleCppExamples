@@ -18,9 +18,9 @@ public:
     ~MainWindow();
 
 private slots:
-    void slAddPlane();
-
     void slMouseUnderPlane(bool contains);
+    void slRadioButtonsChanged(bool toggled);
+    void slPbClip();
 
 private:
     Ui::MainWindow *ui;

@@ -1,5 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file>v8_engine.obj</file>
+        <file>eng.vert</file>
+        <file>eng.geom</file>
     </qresource>
 </RCC>

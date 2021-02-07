@@ -5,10 +5,27 @@
 
 namespace Qt3DRender {
     class QPickEvent;
-    class QObjectPicker;
 }
 
 class CMovablePlanePrivate;
+
+namespace MovablePlane
+{
+
+enum EN_TransformationMode
+{
+    ENTM_FIRST = 0,
+
+    ENTM_OFF = ENTM_FIRST,
+    ENTM_MOVE,
+    ENTM_RESIZE,
+    ENTM_ROTATE,
+
+    ENTM_LAST
+};
+typedef int TTransformationMode;
+
+}
 
 class CMovablePlane : public Qt3DCore::QEntity
 {
@@ -21,6 +38,7 @@ public:
     QVector3D getPos() const;
     QSizeF getSize() const;
 
+    void setTransformationMode(const MovablePlane::TTransformationMode mode);
     void setPos(const QVector3D &pos);
     void setSize(const QSizeF &size);
     void setColors(const QColor &sideA, const QColor &sideB,
@@ -32,6 +50,9 @@ signals:
 
 private slots:
     void slContainsMouseChanged(bool containsMouse);
+    void slPressed(Qt3DRender::QPickEvent *pic);
+    void slReleased(Qt3DRender::QPickEvent *pic);
+    void slMoved(Qt3DRender::QPickEvent *pic);
 
 private:
     CMovablePlanePrivate * const d_ptr;
