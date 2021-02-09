@@ -9,13 +9,22 @@ CONFIG += c++11
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    cabstractentitymodel.cpp \
     cmovableplane.cpp \
+    cmovableplanedelegate.cpp \
+    cmovableplanemodel.cpp \
+    cobjinspectorfactorymethod.cpp \
     main.cpp \
     mainwindow.cpp
 
 HEADERS += \
+    cabstractentitymodel.h \
     cmovableplane.h \
-    mainwindow.h
+    cmovableplanedelegate.h \
+    cmovableplanemodel.h \
+    cobjinspectorfactorymethod.h \
+    mainwindow.h \
+    movableplanemodel_types.h
 
 FORMS += \
     mainwindow.ui

@@ -23,6 +23,9 @@ private slots:
     void slPbClip();
 
 private:
+    void itemsSelectionChanged();
+
+private:
     Ui::MainWindow *ui;
 
     MainWindowPrivate * const d_ptr;

@@ -35,9 +35,11 @@ public:
     CMovablePlane(QNode *parent = nullptr);
     ~CMovablePlane();
 
+    QString getName() const;
     QVector3D getPos() const;
     QSizeF getSize() const;
 
+    void setName(const QString &name);
     void setTransformationMode(const MovablePlane::TTransformationMode mode);
     void setPos(const QVector3D &pos);
     void setSize(const QSizeF &size);
@@ -46,6 +48,8 @@ public:
     void setAlpha(const float alpha);
 
 signals:
+    void sigNameChanged(QString name);
+    void sigSizeChanged();
     void sigMouseHovered(bool containsMouse);
 
 private slots:

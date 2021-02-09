@@ -4,6 +4,8 @@
 #include <QVBoxLayout>
 #include <QToolBar>
 #include <QFile>
+#include <QAbstractItemModel>
+#include <QAbstractItemDelegate>
 
 #include <Qt3DCore/QEntity>
 #include <Qt3DCore/QTransform>
@@ -15,12 +17,14 @@
 #include <Qt3DRender/QTechnique>
 #include <Qt3DRender/QRenderPass>
 #include <Qt3DRender/QClipPlane>
+#include <Qt3DRender/QParameter>
+#include <Qt3DRender/QPointLight>
 
 #include <Qt3DExtras/QMetalRoughMaterial>
 #include <Qt3DExtras/Qt3DWindow>
 #include <Qt3DExtras/QOrbitCameraController>
-#include <Qt3DRender/QPointLight>
 
+#include "cobjinspectorfactorymethod.h"
 #include "cmovableplane.h"
 
 using namespace Qt3DRender;
@@ -41,7 +45,9 @@ class MainWindowPrivate
     Qt3DCore::QEntity *model;
     Qt3DExtras::Qt3DWindow *view;
     Qt3DExtras::QOrbitCameraController *camerController;
+
     CMovablePlane *plane;
+    std::vector <Qt3DCore::QEntity *> selectedItems;
 };
 
 
@@ -58,7 +64,7 @@ static const float FAR_PLAN = 1000.f;
 //model
 static const char* MDL_OBJ_PATH = "qrc:/v8_engine.obj";
 static const float DEF_Y_ROTATION = - 90.f;
-#include <QParameter>
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -147,6 +153,9 @@ MainWindow::MainWindow(QWidget *parent)
     param->setName("plane");
     param->setValue(QVector4D(0, 0, 0, 0));
     mdlMaterial->effect()->addParameter(param);
+
+    d_ptr->selectedItems.push_back(d_ptr->plane);
+    itemsSelectionChanged();
 }
 
 MainWindow::~MainWindow()
@@ -201,6 +210,25 @@ void MainWindow::slPbClip()
     {
         if (param->name() == QString("plane"))
             param->setValue(plVec);
+    }
+}
+
+void MainWindow::itemsSelectionChanged()
+{
+    ui->tvObjectInspector->model()->deleteLater();
+    ui->tvObjectInspector->setModel(nullptr);
+
+    if (d_ptr->selectedItems.size() == 1)
+    {
+        QAbstractItemModel * const itemModel =
+                CObjInspectorFactoryMethod::createModel(*d_ptr->selectedItems.front());
+        itemModel->setParent(this);
+        ui->tvObjectInspector->setModel(itemModel);
+        QAbstractItemDelegate * const delegate =
+                CObjInspectorFactoryMethod::createDelegate(*d_ptr->selectedItems.front());
+        delegate->setParent(this);
+        ui->tvObjectInspector->setItemDelegateForColumn(1, delegate);
+        ui->tvObjectInspector->expandAll();
     }
 }
 

@@ -252,6 +252,7 @@ class CMovablePlanePrivate
     CMovablePlane * const q_ptr;
     TTransformationMode transformMode;
     QVector3D lastPos;
+    QString name;
     QSizeF size;
 
     //plane
@@ -284,6 +285,11 @@ CMovablePlane::CMovablePlane(QNode *parent) :
 CMovablePlane::~CMovablePlane()
 {
     delete d_ptr;
+}
+
+QString CMovablePlane::getName() const
+{
+    return d_ptr->name;
 }
 
 QVector3D CMovablePlane::getPos() const
@@ -476,6 +482,12 @@ QSizeF CMovablePlane::getSize() const
     return d_ptr->size;
 }
 
+void CMovablePlane::setName(const QString &name)
+{
+    d_ptr->name = name;
+    emit sigNameChanged(d_ptr->name);
+}
+
 void CMovablePlane::setTransformationMode(const TTransformationMode mode)
 {
     d_ptr->transformMode = mode;
@@ -494,4 +506,5 @@ void CMovablePlane::setSize(const QSizeF &size)
         d_ptr->updateBorderTransform(pair.first, *pair.second.first, *pair.second.second);
     for(auto &pair : d_ptr->cubeMap)
         d_ptr->updateCubeTransform(*pair.second, pair.first);
+    emit sigSizeChanged();
 }
