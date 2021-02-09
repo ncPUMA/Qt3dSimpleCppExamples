@@ -26,6 +26,7 @@
 
 #include "cobjinspectorfactorymethod.h"
 #include "cmovableplane.h"
+#include "cabstractentitymodel.h"
 
 using namespace Qt3DRender;
 
@@ -215,19 +216,27 @@ void MainWindow::slPbClip()
 
 void MainWindow::itemsSelectionChanged()
 {
-    ui->tvObjectInspector->model()->deleteLater();
+    QAbstractItemDelegate * const oldDelegate =
+            ui->tvObjectInspector->itemDelegateForColumn(CAbstractEntityModel::ENC_VALUE);
+    ui->tvObjectInspector->setItemDelegateForColumn(CAbstractEntityModel::ENC_VALUE, nullptr);
+    delete oldDelegate;
+
+    QAbstractItemModel * const oldModel = ui->tvObjectInspector->model();
     ui->tvObjectInspector->setModel(nullptr);
+    delete oldModel;
 
     if (d_ptr->selectedItems.size() == 1)
     {
         QAbstractItemModel * const itemModel =
                 CObjInspectorFactoryMethod::createModel(*d_ptr->selectedItems.front());
-        itemModel->setParent(this);
+        if (itemModel)
+            itemModel->setParent(this);
         ui->tvObjectInspector->setModel(itemModel);
         QAbstractItemDelegate * const delegate =
                 CObjInspectorFactoryMethod::createDelegate(*d_ptr->selectedItems.front());
-        delegate->setParent(this);
-        ui->tvObjectInspector->setItemDelegateForColumn(1, delegate);
+        if (delegate)
+            delegate->setParent(this);
+        ui->tvObjectInspector->setItemDelegateForColumn(CAbstractEntityModel::ENC_VALUE, delegate);
         ui->tvObjectInspector->expandAll();
     }
 }
