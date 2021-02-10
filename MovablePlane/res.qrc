@@ -3,5 +3,7 @@
         <file>v8_engine.obj</file>
         <file>eng.vert</file>
         <file>eng.geom</file>
+        <file>engv2.geom</file>
+        <file>engv2.vert</file>
     </qresource>
 </RCC>

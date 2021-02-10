@@ -40,4 +40,6 @@ RESOURCES += \
 DISTFILES += \
     eng.geom \
     eng.vert \
+    engv2.geom \
+    engv2.vert \
     v8_engine.obj

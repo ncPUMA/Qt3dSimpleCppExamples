@@ -24,7 +24,6 @@
     </rect>
    </property>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
   <widget class="QDockWidget" name="dockWidget">
    <attribute name="dockWidgetArea">
     <number>2</number>
@@ -65,10 +64,36 @@
           </property>
          </widget>
         </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
+      <widget class="QGroupBox" name="groupBox_2">
+       <property name="title">
+        <string>Распил</string>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayout_3">
+        <item>
+         <widget class="QRadioButton" name="sbCut">
+          <property name="text">
+           <string>Отрез</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QRadioButton" name="sbSplit">
+          <property name="text">
+           <string>Распил</string>
+          </property>
+         </widget>
+        </item>
         <item>
          <widget class="QPushButton" name="pbClip">
           <property name="text">
-           <string>Отрезать</string>
+           <string>Вжух!</string>
           </property>
          </widget>
         </item>

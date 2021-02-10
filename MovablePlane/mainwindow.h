@@ -21,6 +21,7 @@ private slots:
     void slMouseUnderPlane(bool contains);
     void slRadioButtonsChanged(bool toggled);
     void slPbClip();
+    void slChangeShader();
 
 private:
     void itemsSelectionChanged();

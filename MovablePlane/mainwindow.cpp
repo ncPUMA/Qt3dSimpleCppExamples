@@ -84,34 +84,12 @@ MainWindow::MainWindow(QWidget *parent)
     loader->setSource(QUrl(MDL_OBJ_PATH));
     Qt3DExtras::QMetalRoughMaterial * const mdlMaterial =
             new Qt3DExtras::QMetalRoughMaterial(d_ptr->model);
-    std::map <QString, QByteArray> shProgs = {
-        { ":/eng.vert", QByteArray() },
-        { ":/eng.geom", QByteArray() }
-    };
-    for(auto &pair : shProgs)
-    {
-        QFile shaderFile(pair.first);
-        if (shaderFile.open(QIODevice::ReadOnly | QIODevice::Text))
-        {
-            shProgs[pair.first] = shaderFile.readAll();;
-            shaderFile.close();
-        }
-        else
-            qDebug() << "CClipMaterialPrivate::CClipMaterialPrivate: err load vertex shader"
-                     << pair.first << " "
-                     << shaderFile.errorString();
-    }
-
-    foreach(QTechnique * const technique, mdlMaterial->effect()->techniques())
-        foreach(QRenderPass * const pass, technique->renderPasses())
-        {
-            QShaderProgram * const shProg = pass->shaderProgram();
-            shProg->setVertexShaderCode(shProgs[QString(":/eng.vert")]);
-            shProg->setGeometryShaderCode(shProgs[QString(":/eng.geom")]);
-        }
     mdlMaterial->setBaseColor(QColor(Qt::gray));
     d_ptr->model->addComponent(loader);
     d_ptr->model->addComponent(mdlMaterial);
+    connect(ui->sbCut, SIGNAL(toggled(bool)), SLOT(slChangeShader()));
+    connect(ui->sbSplit, SIGNAL(toggled(bool)), SLOT(slChangeShader()));
+    slChangeShader();
 
     //Install viewport camera, and light
     d_ptr->view = new Qt3DExtras::Qt3DWindow();
@@ -212,6 +190,49 @@ void MainWindow::slPbClip()
         if (param->name() == QString("plane"))
             param->setValue(plVec);
     }
+}
+
+void MainWindow::slChangeShader()
+{
+    QString vShName;
+    QString gShName;
+    if (ui->sbCut->isChecked())
+    {
+        vShName = ":/eng.vert";
+        gShName = ":/eng.geom";
+    }
+    else if (ui->sbSplit->isChecked())
+    {
+        vShName = ":/engv2.vert";
+        gShName = ":/engv2.geom";
+    }
+    std::map <QString, QByteArray> shProgs = {
+        { vShName, QByteArray() },
+        { gShName, QByteArray() }
+    };
+    for(auto &pair : shProgs)
+    {
+        QFile shaderFile(pair.first);
+        if (shaderFile.open(QIODevice::ReadOnly | QIODevice::Text))
+        {
+            shProgs[pair.first] = shaderFile.readAll();;
+            shaderFile.close();
+        }
+        else
+            qDebug() << "CClipMaterialPrivate::CClipMaterialPrivate: err load vertex shader"
+                     << pair.first << " "
+                     << shaderFile.errorString();
+    }
+
+    QVector <QMaterial *> matVec = d_ptr->model->componentsOfType <QMaterial> ();
+    Q_ASSERT(matVec.size() == 1);
+    foreach(QTechnique * const technique, matVec.front()->effect()->techniques())
+        foreach(QRenderPass * const pass, technique->renderPasses())
+        {
+            QShaderProgram * const shProg = pass->shaderProgram();
+            shProg->setVertexShaderCode(shProgs[vShName]);
+            shProg->setGeometryShaderCode(shProgs[gShName]);
+        }
 }
 
 void MainWindow::itemsSelectionChanged()
